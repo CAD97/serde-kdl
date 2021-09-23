@@ -1,0 +1,6 @@
+---
+source: tests/insta.rs
+expression: "to_string_ugly::<StringMap>(&[(\"one\", 1), (\"two\", 2)].into_iter().collect())?"
+
+---
+- { - { key r"one"; value 1; }; - { key r"two"; value 2; }; }
