@@ -79,8 +79,8 @@ arguments or properties but has a children block, the `-` may be replaced with
 the type annotation directly. In this case, the actual type annotation MAY be
 used for an outer type (such as the enum type for variants, or a newtype).
 
-The root node by the above construction is almost certainly a literal node;
-instead, its children MAY be represented as multiple root KDL Nodes.
+If the root node is a compound type (not a primitive), its fields may be
+directly placed as multiple root nodes in the KDL document instead.
 
   [KDL Argument]: <https://github.com/kdl-org/kdl/blob/main/SPEC.md#argument>
   [KDL Document Language]: <https://github.com/kdl-org/kdl>

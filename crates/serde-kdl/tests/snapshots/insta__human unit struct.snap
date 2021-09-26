@@ -1,0 +1,6 @@
+---
+source: crates/serde-kdl/tests/insta.rs
+expression: to_string(&Unit)?
+
+---
+- null

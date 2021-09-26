@@ -1,0 +1,15 @@
+---
+source: crates/serde-kdl/tests/insta.rs
+expression: "to_string::<StringMap>(&[(\"one\", 1), (\"two\", 2)].into_iter().collect())?"
+
+---
+
+- {
+    key r"one"
+    value 1
+}
+- {
+    key r"two"
+    value 2
+}
+

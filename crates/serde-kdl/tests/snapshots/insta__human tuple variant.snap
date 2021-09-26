@@ -1,0 +1,9 @@
+---
+source: crates/serde-kdl/tests/insta.rs
+expression: "to_string(&Enum::Tuple(0, 0))?"
+
+---
+(Tuple)- {
+    - 0
+    - 0
+}

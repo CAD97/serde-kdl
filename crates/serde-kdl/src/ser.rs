@@ -3,13 +3,21 @@ use {
     paste::paste,
     serde::ser::*,
     std::{
+        fmt::{self, Write as _},
         io::{self, prelude::*},
         marker::PhantomData,
     },
 };
 
-const INDENT_LITERAL: &str = unsafe { std::str::from_utf8_unchecked(&[b' '; u8::MAX as _]) };
 const HASHES_LITERAL: &str = unsafe { std::str::from_utf8_unchecked(&[b'#'; u8::MAX as _]) };
+const INDENT_LITERAL: &str = unsafe {
+    const INDENT_LITERAL_BYTES: [u8; 256] = {
+        let mut arr = [b' '; u8::MAX as usize + 1];
+        arr[0] = b'\n';
+        arr
+    };
+    std::str::from_utf8_unchecked(&INDENT_LITERAL_BYTES)
+};
 
 fn count_needed_hashes(s: &str) -> usize {
     let mut outside_hash_count = 0;
@@ -77,7 +85,7 @@ pub trait Format {
     fn end_map(&mut self, s: &mut Self::Sink) -> io::Result<()>;
 }
 
-/// A formatter for SiK that prioritizes single-pass serialization.
+/// A formatter for SiK that prioritizes single-pass zero-copy serialization.
 ///
 /// This allows it to serialize to an arbitrary `io::Write`, though
 /// the emitted SiK may not be ideal (containing unnecessary blocks).
@@ -111,17 +119,11 @@ impl<W: ?Sized> SimpleFormatter<W> {
         W: io::Write,
     {
         if let Some(ty) = self.ty.take() {
-            if is_valid_kdl_identifier(ty) {
-                write!(w, "({})", ty)?;
-            } else {
-                let hash_count = count_needed_hashes(ty);
-                write!(
-                    w,
-                    r#"(r{hashes}"{}"{hashes})"#,
-                    ty,
-                    hashes = &HASHES_LITERAL[..hash_count]
-                )?;
-            }
+            assert!(
+                is_valid_kdl_identifier(ty),
+                "Provided an invalid KDL identifier as type annotation; this is a bug in serde-kdl"
+            );
+            write!(w, "({})", ty)?;
         }
         if let Some(field) = self.field.take() {
             if is_valid_kdl_identifier(field) {
@@ -135,21 +137,36 @@ impl<W: ?Sized> SimpleFormatter<W> {
                     hashes = &HASHES_LITERAL[..hash_count]
                 )?;
             }
+        } else {
+            unreachable!("all values should be written in a field in SimpleFormatter")
         }
         Ok(())
     }
 }
 
 macro_rules! forward_write_to_display {
-    ($($T:ident),* $(,)?) => {$(
-        paste! {
-            fn [<write_ $T:snake>](&mut self, w: &mut Self::Sink, v: $T) -> io::Result<()>
+    ($($T:ident),* $(,)?) => {
+        paste! {$(
+            fn [<write_ $T:snake>](&mut self, s: &mut Self::Sink, v: $T) -> io::Result<()>
             {
-                self.write_pre_value(w)?;
-                write!(w, "{}", v)
+                self.provide_type_annotation(s, stringify!($T))?;
+                self.write_pre_value(s)?;
+                write!(s, "{}", v)
             }
-        }
-    )*};
+        )*}
+    };
+
+    ([$map_err:ident] $($T:ident),* $(,)?) => {
+        paste! {$(
+            fn [<write_ $T:snake>](&mut self, s: &mut Self::Sink, v: $T) -> io::Result<()>
+            {
+                self.provide_type_annotation(s, stringify!($T))?;
+                self.write_pre_value(s)?;
+                write!(s, "{}", v).map_err($map_err)?;
+                Ok(())
+            }
+        )*}
+    };
 }
 
 impl<W: ?Sized> Format for SimpleFormatter<W>
@@ -196,14 +213,11 @@ where
         )
     }
 
-    fn write_bytes(&mut self, mut s: &mut Self::Sink, v: &[u8]) -> io::Result<()> {
+    fn write_bytes(&mut self, s: &mut Self::Sink, v: &[u8]) -> io::Result<()> {
         self.write_pre_value(s)?;
         write!(s, r#"""#)?;
         {
-            let mut w = base64::write::EncoderWriter::new(
-                &mut s,
-                base64::Config::new(base64::CharacterSet::Standard, true),
-            );
+            let mut w = base64::write::EncoderWriter::new(&mut *s, base64::STANDARD);
             w.write_all(v)?;
             w.finish()?;
         }
@@ -227,6 +241,184 @@ where
     fn end_field(&mut self, s: &mut Self::Sink) -> io::Result<()> {
         write!(s, "; ")
     }
+
+    fn begin_map(&mut self, s: &mut Self::Sink) -> io::Result<()> {
+        self.begin_group(s)
+    }
+
+    fn begin_map_key(&mut self, s: &mut Self::Sink) -> io::Result<()> {
+        self.begin_field(s, None)?;
+        self.begin_group(s)?;
+        self.begin_field(s, Some("key"))
+    }
+
+    fn end_map_key(&mut self, s: &mut Self::Sink) -> io::Result<()> {
+        self.end_field(s)
+    }
+
+    fn begin_map_value(&mut self, s: &mut Self::Sink) -> io::Result<()> {
+        self.begin_field(s, Some("value"))
+    }
+
+    fn end_map_value(&mut self, s: &mut Self::Sink) -> io::Result<()> {
+        self.end_field(s)?;
+        self.end_group(s)?;
+        self.end_field(s)
+    }
+
+    fn end_map(&mut self, s: &mut Self::Sink) -> io::Result<()> {
+        self.end_group(s)
+    }
+}
+
+/// A formatter for SiK that prioritizes human-friendly serialization.
+///
+/// This includes a significant amount of backtracing to retroactively
+/// choose the optimal format, so this formatter only supports writing
+/// to in-memory buffers (i.e. `String`s), and not arbitrary IO objects.
+#[derive(Debug)]
+pub struct HumanFormatter {
+    root: bool,
+    indent: u8,
+    ty: Option<&'static str>,
+    field: Option<&'static str>,
+}
+
+impl Default for HumanFormatter {
+    fn default() -> Self {
+        Self {
+            root: true,
+            indent: 1,
+            ty: None,
+            field: Some("-"),
+        }
+    }
+}
+
+fn as_io(_: fmt::Error) -> io::ErrorKind {
+    io::ErrorKind::Other
+}
+
+impl HumanFormatter {
+    fn write_pre_value(&mut self, s: &mut String) -> io::Result<()> {
+        if let Some(ty) = self.ty.take() {
+            assert!(
+                is_valid_kdl_identifier(ty),
+                "Provided an invalid KDL identifier as type annotation; this is a bug in serde-kdl"
+            );
+            write!(s, "({})", ty).map_err(as_io)?;
+        }
+        if let Some(field) = self.field.take() {
+            if is_valid_kdl_identifier(field) {
+                write!(s, "{} ", field).map_err(as_io)?;
+            } else {
+                let hash_count = count_needed_hashes(field);
+                write!(
+                    s,
+                    r#"r{hashes}"{}"{hashes} "#,
+                    field,
+                    hashes = &HASHES_LITERAL[..hash_count]
+                )
+                .map_err(as_io)?;
+            }
+        } else {
+            unreachable!("unimplmented code path");
+            // write!(s, " ").map_err(as_io)?;
+        }
+        Ok(())
+    }
+}
+
+impl Format for HumanFormatter {
+    type Sink = String;
+
+    fn provide_type_annotation(&mut self, _: &mut Self::Sink, _: &'static str) -> io::Result<()> {
+        // TODO: optionally print these type annotations
+        Ok(())
+    }
+
+    fn require_type_annotation(&mut self, _: &mut Self::Sink, ty: &'static str) -> io::Result<()> {
+        if self.ty.is_some() {
+            panic!("Provided two mandatory type annotations (this is a bug in serde-kdl)");
+        }
+        self.ty = Some(ty);
+        Ok(())
+    }
+
+    forward_write_to_display! { [as_io]
+        bool, u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64,
+    }
+
+    fn write_unit(&mut self, s: &mut Self::Sink) -> io::Result<()> {
+        self.write_pre_value(s)?;
+        write!(s, "null").map_err(as_io)?;
+        Ok(())
+    }
+
+    fn write_string(&mut self, s: &mut Self::Sink, v: &str) -> io::Result<()> {
+        self.write_pre_value(s)?;
+        let hash_count = count_needed_hashes(v);
+
+        write!(
+            s,
+            r#"r{hashes}"{}"{hashes}"#,
+            v,
+            hashes = &HASHES_LITERAL[..hash_count]
+        )
+        .map_err(as_io)?;
+        Ok(())
+    }
+
+    fn write_bytes(&mut self, s: &mut Self::Sink, v: &[u8]) -> io::Result<()> {
+        self.write_pre_value(s)?;
+        write!(s, r#"""#).map_err(as_io)?;
+        base64::encode_config_buf(v, base64::STANDARD, s);
+        write!(s, r#"""#).map_err(as_io)?;
+        Ok(())
+    }
+
+    // Initial impl _always_ uses a children block, for simplicity
+    // Future will include more complex state and rewrite rules to
+    // allow simple node arguments/properties without a block.
+
+    fn begin_group(&mut self, s: &mut Self::Sink) -> io::Result<()> {
+        if self.root {
+            // first level is just root nodes
+            // but only if no root type annotation
+            if self.ty.is_none() {
+                self.field = None;
+                self.root = false;
+                return Ok(());
+            }
+        }
+        self.write_pre_value(s)?;
+        write!(s, "{{").map_err(as_io)?;
+        self.indent += 4;
+        Ok(())
+    }
+
+    fn end_group(&mut self, s: &mut Self::Sink) -> io::Result<()> {
+        if self.indent < 4 {
+            // first level is just root nodes
+            write!(s, "{}", &INDENT_LITERAL[..self.indent as _]).map_err(as_io)?;
+            return Ok(());
+        }
+        self.indent -= 4;
+        write!(s, "{}}}", &INDENT_LITERAL[..self.indent as _]).map_err(as_io)?;
+        Ok(())
+    }
+
+    fn begin_field(&mut self, s: &mut Self::Sink, name: Option<&'static str>) -> io::Result<()> {
+        write!(s, "{}", &INDENT_LITERAL[..self.indent as _]).map_err(as_io)?;
+        self.field = Some(name.unwrap_or("-"));
+        Ok(())
+    }
+
+    fn end_field(&mut self, _: &mut Self::Sink) -> io::Result<()> {
+        Ok(())
+    }
+
+    // No cleverness yet; just use `{ - { key {}; value {}; } }` repr for now
 
     fn begin_map(&mut self, s: &mut Self::Sink) -> io::Result<()> {
         self.begin_group(s)
@@ -443,7 +635,10 @@ impl<'a, F: Format> serde::Serializer for &'a mut Serializer<'_, F> {
     }
 
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
-        self.fmt.begin_map(self.sink)?;
+        match self.opt.map_format {
+            MapFormat::Infer => self.fmt.begin_map(self.sink)?,
+            MapFormat::Tuple | MapFormat::Struct => self.fmt.begin_group(self.sink)?,
+        }
         Ok(self)
     }
 
@@ -556,9 +751,16 @@ impl<'a, F: Format> SerializeMap for &'a mut Serializer<'_, F> {
     where
         T: Serialize,
     {
-        self.fmt.begin_map_key(self.sink)?;
+        match self.opt.map_format {
+            MapFormat::Infer => self.fmt.begin_map_key(self.sink)?,
+            MapFormat::Tuple => self.fmt.begin_field(self.sink, None)?,
+            MapFormat::Struct => self.fmt.begin_field(self.sink, Some("key"))?,
+        }
         key.serialize(&mut **self)?;
-        self.fmt.end_map_key(self.sink)?;
+        match self.opt.map_format {
+            MapFormat::Infer => self.fmt.end_map_key(self.sink)?,
+            MapFormat::Tuple | MapFormat::Struct => self.fmt.end_field(self.sink)?,
+        }
         Ok(())
     }
 
@@ -566,14 +768,24 @@ impl<'a, F: Format> SerializeMap for &'a mut Serializer<'_, F> {
     where
         T: Serialize,
     {
-        self.fmt.begin_map_value(self.sink)?;
+        match self.opt.map_format {
+            MapFormat::Infer => self.fmt.begin_map_value(self.sink)?,
+            MapFormat::Tuple => self.fmt.begin_field(self.sink, None)?,
+            MapFormat::Struct => self.fmt.begin_field(self.sink, Some("value"))?,
+        }
         value.serialize(&mut **self)?;
-        self.fmt.end_map_value(self.sink)?;
+        match self.opt.map_format {
+            MapFormat::Infer => self.fmt.end_map_value(self.sink)?,
+            MapFormat::Tuple | MapFormat::Struct => self.fmt.end_field(self.sink)?,
+        }
         Ok(())
     }
 
     fn end(self) -> Result {
-        self.fmt.end_map(self.sink)?;
+        match self.opt.map_format {
+            MapFormat::Infer => self.fmt.end_map(self.sink)?,
+            MapFormat::Tuple | MapFormat::Struct => self.fmt.end_group(self.sink)?,
+        }
         Ok(())
     }
 }
@@ -643,4 +855,15 @@ where
     let bytes = to_vec_ugly(value)?;
     let string = unsafe { String::from_utf8_unchecked(bytes) };
     Ok(string)
+}
+
+pub fn to_string<T>(value: &T) -> Result<String>
+where
+    T: ?Sized + Serialize,
+{
+    let mut buf = String::new();
+    let mut ser = Serializer::new(&mut buf, HumanFormatter::default());
+    value.serialize(&mut ser)?;
+    drop(ser);
+    Ok(buf)
 }
