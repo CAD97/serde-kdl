@@ -1,6 +1,0 @@
----
-source: tests/insta.rs
-expression: to_string_ugly(&0u32)?
-
----
-- 0

@@ -1,6 +1,0 @@
----
-source: crates/serde-kdl/tests/insta.rs
-expression: to_string(&0i32)?
-
----
-- 0

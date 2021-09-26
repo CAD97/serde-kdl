@@ -1,0 +1,6 @@
+---
+source: crates/serde-kdl/tests/smoke_ser.rs
+expression: to_string(&Newtype(0))?
+
+---
+- 0
