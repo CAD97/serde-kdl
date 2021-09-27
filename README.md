@@ -74,6 +74,16 @@ Children Block, where its children are any applicable choice from this list:
   value is the node's single argument (if a leaf value) or a children block.
 - The child node is a `tuple` of the key and value<sup>[2]</sup>.
 - The child node is a `struct` with fields `key` and `value`.
+- _AUTHOR NOTE:_ whoops, I think `- { - { key 0; value {}; } }` is potentially
+  ambiguous with the shortened version `- { - key=0 { value {} } }`, as that
+  could also be `- { - { key 0; value { value {} }; } }`... this is the only
+  place in the spec that allows "flattening" a child struct into the parent
+  in this fashion; a tuple `(u32, struct)` cannot (currently) be represented
+  as `node 0 { field {} }`, but has to be `node 0 { - { field {} } }` (short)
+  or `node { - 0; - { field {} }; }` (long). We should investigate if we can
+  make this flattening generally acceptable for deserialization (and then)
+  remove case 2 here as falling out of case 3 and 4 plus flattening, even if
+  serialization will never emit such, due to rewriting expense.
 
 Mixing map child node types is allowed, but _very strongly_ discouraged. The
 serialization formatters provided in this crate will never emit such SiK.
