@@ -161,7 +161,7 @@ macro_rules! forward_write_to_display {
             fn [<write_ $T:snake>](&mut self, s: &mut Self::Sink, v: $T) -> io::Result<()>
             {
                 self.provide_type_annotation(s, stringify!($T))?;
-                self.write_pre_value(s)?;
+                self.write_pre_simple_value(s)?;
                 write!(s, "{}", v).map_err($map_err)?;
                 Ok(())
             }
@@ -280,6 +280,7 @@ where
 pub struct HumanFormatter {
     root: bool,
     indent: u8,
+    in_inline_group: bool,
     ty: Option<&'static str>,
     field: Option<&'static str>,
 }
@@ -289,6 +290,7 @@ impl Default for HumanFormatter {
         Self {
             root: true,
             indent: 1,
+            in_inline_group: false,
             ty: None,
             field: Some("-"),
         }
@@ -300,7 +302,57 @@ fn as_io(_: fmt::Error) -> io::ErrorKind {
 }
 
 impl HumanFormatter {
-    fn write_pre_value(&mut self, s: &mut String) -> io::Result<()> {
+    fn write_pre_simple_value(&mut self, s: &mut String) -> io::Result<()> {
+        if self.in_inline_group {
+            write!(s, " ").map_err(as_io)?;
+        } else if !self.root {
+            write!(s, "{}", &INDENT_LITERAL[..self.indent as _]).map_err(as_io)?;
+        }
+        if let Some(ty) = self.ty.take() {
+            assert!(
+                is_valid_kdl_identifier(ty),
+                "Provided an invalid KDL identifier as type annotation; this is a bug in serde-kdl"
+            );
+            write!(s, "({})", ty).map_err(as_io)?;
+        }
+        let mut wrote_field_name = false;
+        if let Some(field) = self.field.take() {
+            wrote_field_name = true;
+            if is_valid_kdl_identifier(field) {
+                write!(s, "{}", field).map_err(as_io)?;
+            } else {
+                let hash_count = count_needed_hashes(field);
+                write!(
+                    s,
+                    r#"r{hashes}"{}"{hashes}"#,
+                    field,
+                    hashes = &HASHES_LITERAL[..hash_count]
+                )
+                .map_err(as_io)?;
+            }
+        }
+        if self.in_inline_group {
+            if wrote_field_name {
+                write!(s, "=").map_err(as_io)?;
+            }
+        } else {
+            if !wrote_field_name {
+                // anonymous node name
+                write!(s, "-").map_err(as_io)?;
+            }
+            write!(s, " ").map_err(as_io)?;
+        }
+        Ok(())
+    }
+
+    fn write_pre_compound_value(&mut self, s: &mut String) -> io::Result<()> {
+        if self.in_inline_group {
+            self.indent += 4;
+            write!(s, " {{{}", &INDENT_LITERAL[..self.indent as _]).map_err(as_io)?;
+            self.in_inline_group = false;
+        } else if !self.root {
+            write!(s, "{}", &INDENT_LITERAL[..self.indent as _]).map_err(as_io)?;
+        }
         if let Some(ty) = self.ty.take() {
             assert!(
                 is_valid_kdl_identifier(ty),
@@ -310,20 +362,19 @@ impl HumanFormatter {
         }
         if let Some(field) = self.field.take() {
             if is_valid_kdl_identifier(field) {
-                write!(s, "{} ", field).map_err(as_io)?;
+                write!(s, "{}", field).map_err(as_io)?;
             } else {
                 let hash_count = count_needed_hashes(field);
                 write!(
                     s,
-                    r#"r{hashes}"{}"{hashes} "#,
+                    r#"r{hashes}"{}"{hashes}"#,
                     field,
                     hashes = &HASHES_LITERAL[..hash_count]
                 )
                 .map_err(as_io)?;
             }
         } else {
-            unreachable!("unimplmented code path");
-            // write!(s, " ").map_err(as_io)?;
+            write!(s, "-").map_err(as_io)?;
         }
         Ok(())
     }
@@ -350,13 +401,13 @@ impl Format for HumanFormatter {
     }
 
     fn write_unit(&mut self, s: &mut Self::Sink) -> io::Result<()> {
-        self.write_pre_value(s)?;
+        self.write_pre_simple_value(s)?;
         write!(s, "null").map_err(as_io)?;
         Ok(())
     }
 
     fn write_string(&mut self, s: &mut Self::Sink, v: &str) -> io::Result<()> {
-        self.write_pre_value(s)?;
+        self.write_pre_simple_value(s)?;
         let hash_count = count_needed_hashes(v);
 
         write!(
@@ -370,16 +421,16 @@ impl Format for HumanFormatter {
     }
 
     fn write_bytes(&mut self, s: &mut Self::Sink, v: &[u8]) -> io::Result<()> {
-        self.write_pre_value(s)?;
+        self.write_pre_simple_value(s)?;
         write!(s, r#"""#).map_err(as_io)?;
         base64::encode_config_buf(v, base64::STANDARD, s);
         write!(s, r#"""#).map_err(as_io)?;
         Ok(())
     }
 
-    // Initial impl _always_ uses a children block, for simplicity
-    // Future will include more complex state and rewrite rules to
-    // allow simple node arguments/properties without a block.
+    // We put as many simple node arguments/properties as possible before the block.
+    // But also, once we've opened the block, further fields are just in the block.
+    // This is simple, requires 0 rewriting, and generates reasonable output.
 
     fn begin_group(&mut self, s: &mut Self::Sink) -> io::Result<()> {
         if self.root {
@@ -391,13 +442,16 @@ impl Format for HumanFormatter {
                 return Ok(());
             }
         }
-        self.write_pre_value(s)?;
-        write!(s, "{{").map_err(as_io)?;
-        self.indent += 4;
+        self.write_pre_compound_value(s)?;
+        self.in_inline_group = true;
         Ok(())
     }
 
     fn end_group(&mut self, s: &mut Self::Sink) -> io::Result<()> {
+        if self.in_inline_group {
+            self.in_inline_group = false;
+            return Ok(());
+        }
         if self.indent < 4 {
             // first level is just root nodes
             write!(s, "{}", &INDENT_LITERAL[..self.indent as _]).map_err(as_io)?;
@@ -408,9 +462,8 @@ impl Format for HumanFormatter {
         Ok(())
     }
 
-    fn begin_field(&mut self, s: &mut Self::Sink, name: Option<&'static str>) -> io::Result<()> {
-        write!(s, "{}", &INDENT_LITERAL[..self.indent as _]).map_err(as_io)?;
-        self.field = Some(name.unwrap_or("-"));
+    fn begin_field(&mut self, _: &mut Self::Sink, name: Option<&'static str>) -> io::Result<()> {
+        self.field = name;
         Ok(())
     }
 

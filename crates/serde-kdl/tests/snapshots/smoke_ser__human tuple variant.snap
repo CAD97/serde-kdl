@@ -3,7 +3,4 @@ source: crates/serde-kdl/tests/smoke_ser.rs
 expression: "to_string(&Enum::Tuple(0, 0))?"
 
 ---
-(Tuple)- {
-    - 0
-    - 0
-}
+(Tuple)- 0 0

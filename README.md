@@ -22,6 +22,7 @@ and similarly, a child literal node may be represented as a [KDL Argument].
 This results in a KDL microsyntax that feels natural to read, write, and edit,
 and takes advantage of the expressiveness that KDL offers. It is, however,
 still a microsyntax, as not all valid KDL documents are necessarily valid SiK.
+The main limitation is that it's not possible to mix properties and arguments.
 
 Serde's 14 primitive types map in the trivial manner: `bool` maps to
 [KDL Boolean], all `iN`, `uN`, and `fN` map to [KDL Number], and `char` maps
@@ -73,11 +74,6 @@ serialization formatters provided in this crate will never emit such SiK.
 Alternative SiK implementations MAY require all map nodes have matching kind.
 
 ### Additional Convenience Features
-
-If any node is a literal (`-`) node with a type annotation and contains no
-arguments or properties but has a children block, the `-` may be replaced with
-the type annotation directly. In this case, the actual type annotation MAY be
-used for an outer type (such as the enum type for variants, or a newtype).
 
 If the root node is a compound type (not a primitive), its fields may be
 directly placed as multiple root nodes in the KDL document instead.
