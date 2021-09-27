@@ -4,6 +4,12 @@ Yet another implementation of the [KDL Document Language], with a focus on
 creating "obvious" mappings between KDL and the Serde data model, pulling from
 precident set by serde-json, suitable for human inspection and modification.
 
+## See also
+
+- [kdl-org/kdl](https://github.com/kdl-org/kdl), the KDL specification
+- [kdl-org/kdl-rs](https://github.com/kdl-org/kdl-rs), the Rust reference implementation
+- [Lucretiel/kaydle](https://github.com/lucretiel/kaydle), another in-progress KDL ser/de
+
 ## Serde-in-KDL (SiK)
 
 This is an informal description of how we map between the [Serde data model]
