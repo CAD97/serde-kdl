@@ -82,21 +82,37 @@ Alternative SiK implementations MAY require all map nodes have matching kind.
 ### Additional Convenience Features
 
 If the root node is a compound type (not a primitive), its fields may be
-directly placed as multiple root nodes in the KDL document instead.
+directly placed as multiple root nodes in the KDL document instead. However,
+this SHOULD never be the case for serde maps, as the order of a map MAY be
+significant, and ordering of KDL properties SHOULD NOT ever be significant.
 
-  [KDL Argument]: <https://github.com/kdl-org/kdl/blob/main/SPEC.md#argument>
-  [KDL Document Language]: <https://github.com/kdl-org/kdl>
-  [KDL Boolean]: <https://github.com/kdl-org/kdl/blob/main/SPEC.md#boolean>
-  [KDL Children Block]: <https://github.com/kdl-org/kdl/blob/main/SPEC.md#children-block>
-  [KDL Identifier]: <https://github.com/kdl-org/kdl/blob/main/SPEC.md#identifier>
-  [KDL Node]: <https://github.com/kdl-org/kdl/blob/main/SPEC.md#node>
-  [KDL Null]: <https://github.com/kdl-org/kdl/blob/main/SPEC.md#null>
-  [KDL Number]: <https://github.com/kdl-org/kdl/blob/main/SPEC.md#number>
-  [KDL Property]: <https://github.com/kdl-org/kdl/blob/main/SPEC.md#property>
-  [KDL String]: <https://github.com/kdl-org/kdl/blob/main/SPEC.md#string>
-  [KDL Type Annotation]: <https://github.com/kdl-org/kdl/blob/main/SPEC.md#type-annotation>
-  [KDL Value]: <https://github.com/kdl-org/kdl/blob/main/SPEC.md#value>
-  [Serde data model]: <https://serde.rs/data-model.html>
+### Ideas for Extension?
+
+- Serde `struct`s are ordered, and keys "will be known at deserialization time
+  without looking at the serialized data," so we could allow not specifying the
+  field name, and inferring in-order fields. This would allow e.g. kdl-schema
+  to be parsed (if not fully properly, due to using a semantic split between
+  value/property/child), as `title "KDL Schema" lang="en"` could be parsed as
+  `title { - "KDL Schema"; lang "en" }`, with the title string being the first
+  parsed field of e.g. `struct Title<'_> { title: &'_ str, lang: Lang }`.
+  - This allows _partial_ mixing of properties/arguments; full mixing would
+    require allowing arguments after properties as well as before, but I think
+    that argument order relative to properties is in SHOULD NOT matter
+    territory in the spec (kdl-org/kdl#205).
+
+  [KDL Argument]: https://github.com/kdl-org/kdl/blob/main/SPEC.md#argument
+  [KDL Document Language]: https://github.com/kdl-org/kdl
+  [KDL Boolean]: https://github.com/kdl-org/kdl/blob/main/SPEC.md#boolean
+  [KDL Children Block]: https://github.com/kdl-org/kdl/blob/main/SPEC.md#children-block
+  [KDL Identifier]: https://github.com/kdl-org/kdl/blob/main/SPEC.md#identifier
+  [KDL Node]: https://github.com/kdl-org/kdl/blob/main/SPEC.md#node
+  [KDL Null]: https://github.com/kdl-org/kdl/blob/main/SPEC.md#null
+  [KDL Number]: https://github.com/kdl-org/kdl/blob/main/SPEC.md#number
+  [KDL Property]: https://github.com/kdl-org/kdl/blob/main/SPEC.md#property
+  [KDL String]: https://github.com/kdl-org/kdl/blob/main/SPEC.md#string
+  [KDL Type Annotation]: https://github.com/kdl-org/kdl/blob/main/SPEC.md#type-annotation
+  [KDL Value]: https://github.com/kdl-org/kdl/blob/main/SPEC.md#value
+  [Serde data model]: https://serde.rs/data-model.html
 
 ## License
 
