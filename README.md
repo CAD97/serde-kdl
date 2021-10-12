@@ -299,7 +299,7 @@ dual licensed as above, without any additional terms or conditions.
 
 -----
 
-[^1]:  Yes, this causes ambiguities with nested `option`, but this is a
+[^1]: Yes, this causes ambiguities with nested `option`, but this is a
 conventional limitation of many serde data formats that you have to deal with
 anyway if you want to support serializing to arbitrary formats. For a general
 solution, you can use a helper like [`serde(with = unwrap_or_skip)`] to enforce
@@ -308,22 +308,22 @@ enforce it to serialize as a `None`/`Some` variant in the serde data model.
 For a SiK specific solution, many implementations support the extension to
 serialize all `option` in your document as a plain `enum` instead.
 
-[^4]:  This follows the expected behavior implemented in serde-json, and makes
+[^4]: This follows the expected behavior implemented in serde-json, and makes
 the introduction of new nominal types (those distinguished solely by name, and
 not by structure) completely transparent on the data side. If this is
 undesirable, you can use `serde(with)` to serialize as a tuple instead of as a
 newtype, or enable an extension to apply this transformation globally.
 
-[^2]:  This is possible in any data format as [`serde(with = map_as_tuple_list)`].
+[^2]: This is possible in any data format as [`serde(with = map_as_tuple_list)`].
 
-[^3]:  This extension is the most "core" of the extensions, and likely expected
+[^3]: This extension is the most "core" of the extensions, and likely expected
 by anyone reading the KDL, as this removes a meaningless level of indentation
 and allows the common practice of multiple root fields for data configuration.
 
-[^5]:  An implementation MUST support all of these MAYs; the MAY refers to the
+[^5]: An implementation MUST support all of these MAYs; the MAY refers to the
 KDL document/data encoding, not the implementation.
 
-[^6]:  "Rightmost" is a problematic specification in the face of non-LTR text.
+[^6]: "Rightmost" is a problematic specification in the face of non-LTR text.
 This is an [upstream spec issue](https://github.com/kdl-org/kdl/issues/212).
 It's reasonable to assume "rightmost" is intended to mean "later in the input
 text," rather than lexically located to the right.
