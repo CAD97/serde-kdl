@@ -1,4 +1,9 @@
-use {crate::*, paste::paste, serde::ser::*, std::io};
+use {
+    crate::*,
+    paste::paste,
+    serde::ser::*,
+    std::{fmt, io},
+};
 
 mod default;
 mod human;
@@ -73,52 +78,76 @@ fn is_valid_kdl_identifier(s: &str) -> bool {
 
 #[rustfmt::skip] // alignment helps a lot here
 pub trait FormatSik {
-    type Sink: ?Sized;
+    type Sink   : ?Sized;
+    type Tuple  : FormatSikTuple    <Format = Self>;
+    type Struct : FormatSikStruct   <Format = Self>;
+    type Map    : FormatSikMap      <Format = Self>;
 
-    // Type annotation
+    // Label
     fn provide_type_annotation  (&mut self, s: &mut Self::Sink, ty: &'static str    ) -> io::Result<()>;
     fn require_type_annotation  (&mut self, s: &mut Self::Sink, ty: &'static str    ) -> io::Result<()>;
 
     // Primitive
-    fn write_bool               (&mut self, s: &mut Self::Sink, v: bool             ) -> io::Result<()>;
-    fn write_u8                 (&mut self, s: &mut Self::Sink, v: u8               ) -> io::Result<()>;
-    fn write_u16                (&mut self, s: &mut Self::Sink, v: u16              ) -> io::Result<()>;
-    fn write_u32                (&mut self, s: &mut Self::Sink, v: u32              ) -> io::Result<()>;
-    fn write_u64                (&mut self, s: &mut Self::Sink, v: u64              ) -> io::Result<()>;
-    fn write_u128               (&mut self, s: &mut Self::Sink, v: u128             ) -> io::Result<()>;
-    fn write_i8                 (&mut self, s: &mut Self::Sink, v: i8               ) -> io::Result<()>;
-    fn write_i16                (&mut self, s: &mut Self::Sink, v: i16              ) -> io::Result<()>;
-    fn write_i32                (&mut self, s: &mut Self::Sink, v: i32              ) -> io::Result<()>;
-    fn write_i64                (&mut self, s: &mut Self::Sink, v: i64              ) -> io::Result<()>;
-    fn write_i128               (&mut self, s: &mut Self::Sink, v: i128             ) -> io::Result<()>;
-    fn write_f32                (&mut self, s: &mut Self::Sink, v: f32              ) -> io::Result<()>;
-    fn write_f64                (&mut self, s: &mut Self::Sink, v: f64              ) -> io::Result<()>;
-    fn write_null               (&mut self, s: &mut Self::Sink                      ) -> io::Result<()>;
-    fn write_string             (&mut self, s: &mut Self::Sink, v: &str             ) -> io::Result<()>;
-    fn write_bytes              (&mut self, s: &mut Self::Sink, v: &[u8]            ) -> io::Result<()>;
+    fn write_bool               (     self, s: &mut Self::Sink, v: bool             ) -> io::Result<()>;
+    fn write_u8                 (     self, s: &mut Self::Sink, v: u8               ) -> io::Result<()>;
+    fn write_u16                (     self, s: &mut Self::Sink, v: u16              ) -> io::Result<()>;
+    fn write_u32                (     self, s: &mut Self::Sink, v: u32              ) -> io::Result<()>;
+    fn write_u64                (     self, s: &mut Self::Sink, v: u64              ) -> io::Result<()>;
+    fn write_u128               (     self, s: &mut Self::Sink, v: u128             ) -> io::Result<()>;
+    fn write_i8                 (     self, s: &mut Self::Sink, v: i8               ) -> io::Result<()>;
+    fn write_i16                (     self, s: &mut Self::Sink, v: i16              ) -> io::Result<()>;
+    fn write_i32                (     self, s: &mut Self::Sink, v: i32              ) -> io::Result<()>;
+    fn write_i64                (     self, s: &mut Self::Sink, v: i64              ) -> io::Result<()>;
+    fn write_i128               (     self, s: &mut Self::Sink, v: i128             ) -> io::Result<()>;
+    fn write_f32                (     self, s: &mut Self::Sink, v: f32              ) -> io::Result<()>;
+    fn write_f64                (     self, s: &mut Self::Sink, v: f64              ) -> io::Result<()>;
+    fn write_null               (     self, s: &mut Self::Sink                      ) -> io::Result<()>;
+    fn write_string             (     self, s: &mut Self::Sink, v: &str             ) -> io::Result<()>;
+    fn write_bytes              (     self, s: &mut Self::Sink, v: &[u8]            ) -> io::Result<()>;
 
-    // Seq, Tuple
-    fn begin_tuple              (&mut self, s: &mut Self::Sink                      ) -> io::Result<()>;
-    fn begin_element            (&mut self, s: &mut Self::Sink                      ) -> io::Result<()>;
-    fn end_element              (&mut self, s: &mut Self::Sink                      ) -> io::Result<()>;
-    fn end_tuple                (&mut self, s: &mut Self::Sink                      ) -> io::Result<()>;
-
-    // Struct
-    fn begin_struct             (&mut self, s: &mut Self::Sink                      ) -> io::Result<()>;
-    fn begin_field              (&mut self, s: &mut Self::Sink, name: &'static str  ) -> io::Result<()>;
-    fn end_field                (&mut self, s: &mut Self::Sink                      ) -> io::Result<()>;
-    fn end_struct               (&mut self, s: &mut Self::Sink                      ) -> io::Result<()>;
-
-    // Map
-    fn begin_map                (&mut self, s: &mut Self::Sink                      ) -> io::Result<()>;
-    fn begin_key                (&mut self, s: &mut Self::Sink                      ) -> io::Result<()>;
-    fn end_key                  (&mut self, s: &mut Self::Sink                      ) -> io::Result<()>;
-    fn begin_value              (&mut self, s: &mut Self::Sink                      ) -> io::Result<()>;
-    fn end_value                (&mut self, s: &mut Self::Sink                      ) -> io::Result<()>;
-    fn end_map                  (&mut self, s: &mut Self::Sink                      ) -> io::Result<()>;
+    // Compound
+    fn begin_tuple              (     self, s: &mut Self::Sink                      ) -> io::Result<Self::Tuple>;
+    fn begin_struct             (     self, s: &mut Self::Sink                      ) -> io::Result<Self::Struct>;
+    fn begin_map                (     self, s: &mut Self::Sink                      ) -> io::Result<Self::Map>;
 }
 
-#[derive(Debug, Default)]
+pub trait FormatSikTuple {
+    type Format: FormatSik;
+
+    fn begin_element(
+        &mut self,
+        s: &mut <Self::Format as FormatSik>::Sink,
+    ) -> io::Result<Self::Format>;
+    fn end_element(&mut self, s: &mut <Self::Format as FormatSik>::Sink) -> io::Result<()>;
+    fn end_tuple(self, s: &mut <Self::Format as FormatSik>::Sink) -> io::Result<()>;
+}
+
+pub trait FormatSikStruct {
+    type Format: FormatSik;
+
+    fn begin_field(
+        &mut self,
+        s: &mut <Self::Format as FormatSik>::Sink,
+        name: &'static str,
+    ) -> io::Result<Self::Format>;
+    fn end_field(&mut self, s: &mut <Self::Format as FormatSik>::Sink) -> io::Result<()>;
+    fn end_struct(self, s: &mut <Self::Format as FormatSik>::Sink) -> io::Result<()>;
+}
+
+pub trait FormatSikMap {
+    type Format: FormatSik;
+
+    fn begin_key(&mut self, s: &mut <Self::Format as FormatSik>::Sink) -> io::Result<Self::Format>;
+    fn end_key(&mut self, s: &mut <Self::Format as FormatSik>::Sink) -> io::Result<()>;
+    fn begin_value(
+        &mut self,
+        s: &mut <Self::Format as FormatSik>::Sink,
+    ) -> io::Result<Self::Format>;
+    fn end_value(&mut self, s: &mut <Self::Format as FormatSik>::Sink) -> io::Result<()>;
+    fn end_map(self, s: &mut <Self::Format as FormatSik>::Sink) -> io::Result<()>;
+}
+
+#[derive(Debug, Clone, Copy, Default)]
 pub struct Options {
     pub map_is_struct: bool,
     pub unit_is_tuple: bool,
@@ -130,8 +159,6 @@ pub struct Options {
 }
 
 /// Serde [`Serializer`](serde::Serializer) for KDL documents.
-///
-/// Note that this serializer may only be used once
 #[derive(Debug)]
 pub struct Serializer<'a, F: FormatSik> {
     opt: Options,
@@ -149,6 +176,48 @@ impl<'a, F: FormatSik> Serializer<'a, F> {
     }
 }
 
+#[derive(Debug)]
+pub struct TupleSerializer<'a, F: FormatSik> {
+    opt: Options,
+    snk: &'a mut F::Sink,
+    fmt: F::Tuple,
+}
+
+#[derive(Debug)]
+pub struct StructSerializer<'a, F: FormatSik> {
+    opt: Options,
+    snk: &'a mut F::Sink,
+    fmt: F::Struct,
+}
+
+#[derive(Debug)]
+enum MapMode<F: FormatSik> {
+    Seq(F::Tuple, Option<F::Struct>),
+    Map(F::Map),
+}
+
+pub struct MapSerializer<'a, F: FormatSik> {
+    opt: Options,
+    snk: &'a mut F::Sink,
+    fmt: MapMode<F>,
+}
+
+impl<F: fmt::Debug + FormatSik> fmt::Debug for MapSerializer<'_, F>
+where
+    F::Sink: fmt::Debug,
+    F::Tuple: fmt::Debug,
+    F::Struct: fmt::Debug,
+    F::Map: fmt::Debug,
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("MapSerializer")
+            .field("opt", &self.opt)
+            .field("snk", &self.snk)
+            .field("fmt", &self.fmt)
+            .finish()
+    }
+}
+
 macro_rules! forward_ser_to_write {
     ($($T:ident),* $(,)?) => {$(
         paste! {
@@ -159,16 +228,16 @@ macro_rules! forward_ser_to_write {
     )*};
 }
 
-impl<'a, F: FormatSik> serde::Serializer for &'a mut Serializer<'_, F> {
+impl<'a, F: FormatSik> serde::Serializer for Serializer<'a, F> {
     type Ok = ();
     type Error = crate::Error;
-    type SerializeSeq = Self;
-    type SerializeTuple = Self;
-    type SerializeTupleStruct = Self;
-    type SerializeTupleVariant = Self;
-    type SerializeMap = Self;
-    type SerializeStruct = Self;
-    type SerializeStructVariant = Self;
+    type SerializeSeq = TupleSerializer<'a, F>;
+    type SerializeTuple = TupleSerializer<'a, F>;
+    type SerializeTupleStruct = TupleSerializer<'a, F>;
+    type SerializeTupleVariant = TupleSerializer<'a, F>;
+    type SerializeMap = MapSerializer<'a, F>;
+    type SerializeStruct = StructSerializer<'a, F>;
+    type SerializeStructVariant = StructSerializer<'a, F>;
 
     forward_ser_to_write! {
         bool, u8, u16, u32, u64, u128, i8, i16, i32, i64, i128, f32, f64,
@@ -214,13 +283,13 @@ impl<'a, F: FormatSik> serde::Serializer for &'a mut Serializer<'_, F> {
         }
     }
 
-    fn serialize_unit_struct(self, name: &'static str) -> Result {
+    fn serialize_unit_struct(mut self, name: &'static str) -> Result {
         self.fmt.provide_type_annotation(self.snk, name)?;
         self.serialize_unit()
     }
 
     fn serialize_unit_variant(
-        self,
+        mut self,
         _name: &'static str,
         _variant_index: u32,
         variant: &'static str,
@@ -229,7 +298,7 @@ impl<'a, F: FormatSik> serde::Serializer for &'a mut Serializer<'_, F> {
         self.serialize_unit()
     }
 
-    fn serialize_newtype_struct<T: ?Sized>(self, name: &'static str, value: &T) -> Result
+    fn serialize_newtype_struct<T: ?Sized>(mut self, name: &'static str, value: &T) -> Result
     where
         T: Serialize,
     {
@@ -244,7 +313,7 @@ impl<'a, F: FormatSik> serde::Serializer for &'a mut Serializer<'_, F> {
     }
 
     fn serialize_newtype_variant<T: ?Sized>(
-        self,
+        mut self,
         _name: &'static str,
         _variant_index: u32,
         variant: &'static str,
@@ -258,17 +327,20 @@ impl<'a, F: FormatSik> serde::Serializer for &'a mut Serializer<'_, F> {
     }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq> {
-        self.fmt.begin_tuple(self.snk)?;
-        Ok(self)
+        let fmt = self.fmt.begin_tuple(self.snk)?;
+        Ok(TupleSerializer {
+            opt: self.opt,
+            snk: self.snk,
+            fmt,
+        })
     }
 
-    fn serialize_tuple(self, _len: usize) -> Result<Self::SerializeTuple> {
-        self.fmt.begin_tuple(self.snk)?;
-        Ok(self)
+    fn serialize_tuple(self, len: usize) -> Result<Self::SerializeTuple> {
+        self.serialize_seq(Some(len))
     }
 
     fn serialize_tuple_struct(
-        self,
+        mut self,
         name: &'static str,
         len: usize,
     ) -> Result<Self::SerializeTupleStruct> {
@@ -277,7 +349,7 @@ impl<'a, F: FormatSik> serde::Serializer for &'a mut Serializer<'_, F> {
     }
 
     fn serialize_tuple_variant(
-        self,
+        mut self,
         _name: &'static str,
         _variant_index: u32,
         variant: &'static str,
@@ -289,21 +361,38 @@ impl<'a, F: FormatSik> serde::Serializer for &'a mut Serializer<'_, F> {
 
     fn serialize_map(self, _len: Option<usize>) -> Result<Self::SerializeMap> {
         if self.opt.map_is_struct {
-            self.fmt.begin_tuple(self.snk)?;
+            let fmt = self.fmt.begin_tuple(self.snk)?;
+            Ok(MapSerializer {
+                opt: self.opt,
+                snk: self.snk,
+                fmt: MapMode::Seq(fmt, None),
+            })
         } else {
-            self.fmt.begin_map(self.snk)?;
+            let fmt = self.fmt.begin_map(self.snk)?;
+            Ok(MapSerializer {
+                opt: self.opt,
+                snk: self.snk,
+                fmt: MapMode::Map(fmt),
+            })
         }
-        Ok(self)
     }
 
-    fn serialize_struct(self, name: &'static str, _len: usize) -> Result<Self::SerializeStruct> {
+    fn serialize_struct(
+        mut self,
+        name: &'static str,
+        _len: usize,
+    ) -> Result<Self::SerializeStruct> {
         self.fmt.provide_type_annotation(self.snk, name)?;
-        self.fmt.begin_struct(&mut self.snk)?;
-        Ok(self)
+        let fmt = self.fmt.begin_struct(&mut self.snk)?;
+        Ok(StructSerializer {
+            opt: self.opt,
+            snk: self.snk,
+            fmt,
+        })
     }
 
     fn serialize_struct_variant(
-        self,
+        mut self,
         _name: &'static str,
         _variant_index: u32,
         variant: &'static str,
@@ -318,7 +407,7 @@ impl<'a, F: FormatSik> serde::Serializer for &'a mut Serializer<'_, F> {
     }
 }
 
-impl<'a, F: FormatSik> SerializeSeq for &'a mut Serializer<'_, F> {
+impl<F: FormatSik> SerializeSeq for TupleSerializer<'_, F> {
     type Ok = ();
     type Error = crate::Error;
 
@@ -326,8 +415,12 @@ impl<'a, F: FormatSik> SerializeSeq for &'a mut Serializer<'_, F> {
     where
         T: Serialize,
     {
-        self.fmt.begin_element(&mut self.snk)?;
-        value.serialize(&mut **self)?;
+        let fmt = self.fmt.begin_element(self.snk)?;
+        value.serialize(Serializer {
+            opt: self.opt,
+            snk: self.snk,
+            fmt,
+        })?;
         self.fmt.end_element(&mut self.snk)?;
         Ok(())
     }
@@ -338,7 +431,7 @@ impl<'a, F: FormatSik> SerializeSeq for &'a mut Serializer<'_, F> {
     }
 }
 
-impl<'a, F: FormatSik> SerializeTuple for &'a mut Serializer<'_, F> {
+impl<F: FormatSik> SerializeTuple for TupleSerializer<'_, F> {
     type Ok = ();
     type Error = crate::Error;
 
@@ -354,7 +447,7 @@ impl<'a, F: FormatSik> SerializeTuple for &'a mut Serializer<'_, F> {
     }
 }
 
-impl<'a, F: FormatSik> SerializeTupleStruct for &'a mut Serializer<'_, F> {
+impl<F: FormatSik> SerializeTupleStruct for TupleSerializer<'_, F> {
     type Ok = ();
     type Error = crate::Error;
 
@@ -370,7 +463,7 @@ impl<'a, F: FormatSik> SerializeTupleStruct for &'a mut Serializer<'_, F> {
     }
 }
 
-impl<'a, F: FormatSik> SerializeTupleVariant for &'a mut Serializer<'_, F> {
+impl<F: FormatSik> SerializeTupleVariant for TupleSerializer<'_, F> {
     type Ok = ();
     type Error = crate::Error;
 
@@ -386,7 +479,7 @@ impl<'a, F: FormatSik> SerializeTupleVariant for &'a mut Serializer<'_, F> {
     }
 }
 
-impl<'a, F: FormatSik> SerializeMap for &'a mut Serializer<'_, F> {
+impl<F: FormatSik> SerializeMap for MapSerializer<'_, F> {
     type Ok = ();
     type Error = crate::Error;
 
@@ -394,17 +487,34 @@ impl<'a, F: FormatSik> SerializeMap for &'a mut Serializer<'_, F> {
     where
         T: Serialize,
     {
-        if self.opt.map_is_struct {
-            self.fmt.begin_struct(self.snk)?;
-            self.fmt.begin_field(self.snk, "key")?;
-        } else {
-            self.fmt.begin_key(self.snk)?;
-        }
-        key.serialize(&mut **self)?;
-        if self.opt.map_is_struct {
-            self.fmt.end_field(self.snk)?;
-        } else {
-            self.fmt.end_key(self.snk)?;
+        match &mut self.fmt {
+            MapMode::Seq(_, Some(_)) => {
+                panic!(
+                    "Didn't call `{}`",
+                    stringify!(SerializeMap::serialize_value),
+                )
+            }
+            MapMode::Seq(tuple, store @ None) => {
+                let fmt = tuple.begin_element(self.snk)?;
+                let mut map = fmt.begin_struct(self.snk)?;
+                let fmt = map.begin_field(self.snk, "key")?;
+                key.serialize(Serializer {
+                    opt: self.opt,
+                    snk: self.snk,
+                    fmt,
+                })?;
+                map.end_field(self.snk)?;
+                *store = Some(map);
+            }
+            MapMode::Map(map) => {
+                let fmt = map.begin_key(self.snk)?;
+                key.serialize(Serializer {
+                    opt: self.opt,
+                    snk: self.snk,
+                    fmt,
+                })?;
+                map.end_key(self.snk)?;
+            }
         }
         Ok(())
     }
@@ -413,32 +523,57 @@ impl<'a, F: FormatSik> SerializeMap for &'a mut Serializer<'_, F> {
     where
         T: Serialize,
     {
-        if self.opt.map_is_struct {
-            self.fmt.begin_field(self.snk, "value")?;
-        } else {
-            self.fmt.begin_value(self.snk)?;
-        }
-        value.serialize(&mut **self)?;
-        if self.opt.map_is_struct {
-            self.fmt.end_field(self.snk)?;
-            self.fmt.end_struct(self.snk)?;
-        } else {
-            self.fmt.end_value(self.snk)?;
+        match &mut self.fmt {
+            MapMode::Seq(_, None) => panic!(
+                "Called `{}` without `{}`",
+                stringify!(SerializeMap::serialize_value),
+                stringify!(SerializeMap::serialize_key),
+            ),
+            MapMode::Seq(tuple, store @ Some(_)) => {
+                let mut map = store.take().unwrap();
+                let fmt = map.begin_field(self.snk, "value")?;
+                value.serialize(Serializer {
+                    opt: self.opt,
+                    snk: self.snk,
+                    fmt,
+                })?;
+                map.end_field(self.snk)?;
+                map.end_struct(self.snk)?;
+                tuple.end_element(self.snk)?;
+            }
+            MapMode::Map(map) => {
+                let fmt = map.begin_value(self.snk)?;
+                value.serialize(Serializer {
+                    opt: self.opt,
+                    snk: self.snk,
+                    fmt,
+                })?;
+                map.end_value(self.snk)?;
+            }
         }
         Ok(())
     }
 
     fn end(self) -> Result {
-        if self.opt.map_is_struct {
-            self.fmt.end_struct(self.snk)?;
-        } else {
-            self.fmt.end_map(self.snk)?;
+        match self.fmt {
+            MapMode::Seq(_, Some(_)) => {
+                panic!(
+                    "Didn't call `{}`",
+                    stringify!(SerializeMap::serialize_value),
+                )
+            }
+            MapMode::Seq(tuple, None) => {
+                tuple.end_tuple(self.snk)?;
+            }
+            MapMode::Map(map) => {
+                map.end_map(self.snk)?;
+            }
         }
         Ok(())
     }
 }
 
-impl<'a, F: FormatSik> SerializeStruct for &'a mut Serializer<'_, F> {
+impl<F: FormatSik> SerializeStruct for StructSerializer<'_, F> {
     type Ok = ();
     type Error = crate::Error;
 
@@ -446,8 +581,12 @@ impl<'a, F: FormatSik> SerializeStruct for &'a mut Serializer<'_, F> {
     where
         T: Serialize,
     {
-        self.fmt.begin_field(self.snk, key)?;
-        value.serialize(&mut **self)?;
+        let fmt = self.fmt.begin_field(self.snk, key)?;
+        value.serialize(Serializer {
+            opt: self.opt,
+            snk: self.snk,
+            fmt,
+        })?;
         self.fmt.end_field(self.snk)?;
         Ok(())
     }
@@ -458,7 +597,7 @@ impl<'a, F: FormatSik> SerializeStruct for &'a mut Serializer<'_, F> {
     }
 }
 
-impl<'a, F: FormatSik> SerializeStructVariant for &'a mut Serializer<'_, F> {
+impl<'a, F: FormatSik> SerializeStructVariant for StructSerializer<'_, F> {
     type Ok = ();
     type Error = crate::Error;
 
