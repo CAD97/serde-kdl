@@ -3,4 +3,4 @@ pub mod error;
 pub mod ser;
 
 pub use error::{Error, Result};
-pub use ser::{to_string, Serializer};
+pub use ser::Serializer;

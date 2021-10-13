@@ -37,12 +37,12 @@ As such, like JiK, we introduce the idea of a "literal node" — that is, a
 [KDL Argument]s, [KDL Property]s, and (optionally) a [KDL Children Block].
 
 Serde leaf values to a literal node with a single KDL Value, and serde compound
-values map to a series of child nodes. Additionally, a KDL Value or KDL
-Property may be used instead of a child leaf node, if (and only if) this does
-not break KDL's ordering rules. (In practice, this means that Arguments must
-appear before Properties, and that any data structure which should preserve
-order must appear in a child block.) More specific rules are introduced in the
-detailed mapping specification.
+values map to a literal node with a series of child nodes. Additionally, a KDL
+Value or KDL Property may be used instead of a child leaf node, if (and only
+if) this does not break KDL's ordering rules. (In practice, this means that
+Arguments must appear before Properties, and that any data structure which
+should preserve order must appear in a child block.) More specific rules are
+discussed in the detailed mapping specification.
 
 This results in a KDL microsyntax that feels fairly natural to read, write, and
 edit, and takes advantage of most of the expressiveness that KDL offers. It is,
@@ -62,41 +62,42 @@ Serde `byte array` (`[u8]`) maps to a Base64-encoded KDL String,
 optionally with the standard `base64` type annotation.
 
 Serde `option` follows serde-json's example and maps to either [KDL Null] for
-a none value or the wrapped some value directly[^1].
+a none value or the wrapped some value directly[^option].
 
 Serde `unit` maps to KDL Null. Serde `unit_struct` serializes as if it were
-`unit`[^4]. Serde `unit_variant` serializes as if it were `unit`, but with
-a _mandatory_ [KDL Type Annotation] of the name of the variant.
+`unit`[^newtype]. Serde `unit_variant` serializes as if it were `unit`, but
+with a _mandatory_ [KDL Type Annotation] of the name of the variant.
 
-Serde `newtype_struct` serializes as if it were its wrapped value[^4]. Serde
-`newtype_variant` serializes as if it were `newtype_struct`, but with a
+Serde `newtype_struct` serializes as if it were its wrapped value[^newtype].
+Serde `newtype_variant` serializes as if it were `newtype_struct`, but with a
 _mandatory_ KDL Type Annotation of the name of the variant.
 
 Serde `seq` and `tuple` are both ordered collections which serialize as a KDL
 Children Block containing literal (`-`) nodes. Order is significant, so these
 MUST NOT be represented as KDL Values. `tuple_struct` serializes as if it were
-`tuple`[^4]. `tuple_variant` serializes as if it were `tuple_struct`, but with
-a _mandatory_ KDL Type Annotation of the name of the variant. If members of the
-`tuple` are simple values (that is, serialize as a single KDL Value), they
-MAY[^5] be uplifted and serialized as KDL Values of the `tuple` literal node,
-rather than child literal nodes.
+`tuple`[^newtype]. `tuple_variant` serializes as if it were `tuple_struct`, but
+with a _mandatory_ KDL Type Annotation of the name of the variant. If members
+of the `tuple` are simple values (that is, serialize as a single KDL Value),
+they MAY[^impl-may] be uplifted and serialized as KDL Values of the `tuple`
+literal node, rather than child literal nodes.
 
 Serde `struct` is an unordered key-value pairing that serializes as a sequence
 of child nodes, where the node name is the struct field key, and the node's
 value is the serialized value. Serde `struct_variant` serializes as if it were
 `struct`, but with a _mandatory_ KDL Type Annotation of the name of the
-variant. As `struct` is unordered, any fields which have simple values MAY[^5]
-be uplifted and serialized as KDL Properties of the `struct` node, rather than
-child literal nodes. However, even though the fields _are_ unordered, they have
-a "natural" order, and KDL Arguments MAY[^5] be used for fields as well. Each
-KDL Argument maps to the next field in the natural order. All KDL Arguments
-MUST occur before any KDL Properties; a KDL Argument after a KDL Property MUST
-result in an error. Any duplicated struct fields (whether from a duplicated
-name or a clash with an implicit name) SHOULD pass these through as duplicates
-in the Serde model. If they are not passed through, then a KDL Argument
-duplicating a named field MUST be an error, a KDL Property duplicating a child
-node MUST also be an error, and a KDL Property duplicating a KDL Property MUST
-be rightmost[^6]-Property wins, as specified by the KDL specification.
+variant. As `struct` is unordered, any fields which have simple values
+MAY[^impl-may] be uplifted and serialized as KDL Properties of the `struct`
+node, rather than child literal nodes. However, even though the fields _are_
+unordered, they have a "natural" order, and KDL Arguments MAY[^impl-may] be
+used for fields as well. Each KDL Argument maps to the next field in the
+natural order. All KDL Arguments MUST occur before any KDL Properties; a KDL
+Argument after a KDL Property MUST result in an error. Any duplicated struct
+fields (whether from a duplicated name or a clash with an implicit name)
+SHOULD pass these through as duplicates in the Serde model. If they are not
+passed through, then a KDL Argument duplicating a named field MUST be an error,
+a KDL Property duplicating a child node MUST also be an error, and a KDL
+Property duplicating a KDL Property MUST be rightmost[^ltr]-Property wins, as
+specified by the KDL specification.
 
 Serde `map` is tricky, due to the fact that KDL has no native representation
 for value-value mappings. Note, though, that many serde data formats, such as 
@@ -121,7 +122,7 @@ encoding style does not match.
 - If the key type is a leaf value, the child node is a literal node with name
   `-`, and has a property with name `key` which contains the map key; the map
   value is the node's single argument (if a leaf value) or a children block.
-- The child node is a `tuple` of the key and value[^2].
+- The child node is a `tuple` of the key and value[^tuple-map].
 - The child node is a `struct` with fields `key` and `value`.
 - _AUTHOR NOTE:_ whoops, I think `- { - { key 0; value {}; } }` is potentially
   ambiguous with the shortened version `- { - key=0 { value {} } }`, as that
@@ -163,20 +164,20 @@ encoding style does not match.
   - Serde `option` MAY optionally be de/serialized as if it were a normal Serde
     `enum` variant of `None`/`Some`, rather than a special type.
   - Serde `unit_struct` MAY optionally be de/serialized as if it were a Serde
-    `tuple_struct` containing a single `null`.
+    `tuple_struct` containing no elements.
   - Serde `unit_variant` MAY optionally be de/serialized as if it were a Serde
-    `tuple_variant` containing a single `null`.
+    `tuple_variant` containing no elements.
   - Serde `newtype_struct` MAY optionally be de/serialized as if it were a Serde
     `tuple_struct` containing the wrapped value.
   - Serde `newtype_variant` MAY optionally be de/serialized as if it were a Serde
     `tuple_variant` containing the wrapped value.
 - Alternative map entry serialization.
-  - Map entries MAY be represented as a `tuple` of the key and value[^2].
+  - Map entries MAY be represented as a `tuple` of the key and value[^tuple-map].
   - Map entries MAY be represented as a `struct` with field `key` and `value`.
 - For the specific case of a document root that is a Serde `struct` or `tuple`
   (or a data type that maps as such _without_ a mandatory type annotation),
   the literal node for the root MAY be omitted, instead placing its children as
-  the (multiple) root-level nodes of the document.[^3]
+  the (multiple) root-level nodes of the document.[^flat-root]
 
 If an implementation claims to implement the SiK spec, it MUST do one of:
 
@@ -299,7 +300,7 @@ dual licensed as above, without any additional terms or conditions.
 
 -----
 
-[^1]: Yes, this causes ambiguities with nested `option`, but this is a
+[^option]: Yes, this causes ambiguities with nested `option`, but this is a
 conventional limitation of many serde data formats that you have to deal with
 anyway if you want to support serializing to arbitrary formats. For a general
 solution, you can use a helper like [`serde(with = unwrap_or_skip)`] to enforce
@@ -308,22 +309,23 @@ enforce it to serialize as a `None`/`Some` variant in the serde data model.
 For a SiK specific solution, many implementations support the extension to
 serialize all `option` in your document as a plain `enum` instead.
 
-[^4]: This follows the expected behavior implemented in serde-json, and makes
+[^newtype]: This follows the expected behavior implemented in serde-json, and makes
 the introduction of new nominal types (those distinguished solely by name, and
 not by structure) completely transparent on the data side. If this is
 undesirable, you can use `serde(with)` to serialize as a tuple instead of as a
 newtype, or enable an extension to apply this transformation globally.
 
-[^2]: This is possible in any data format as [`serde(with = map_as_tuple_list)`].
+[^tuple-map]: This is possible in any data format as
+[`serde(with = map_as_tuple_list)`].
 
-[^3]: This extension is the most "core" of the extensions, and likely expected
+[^flat-root]: This extension is the most "core" of the extensions, and likely expected
 by anyone reading the KDL, as this removes a meaningless level of indentation
 and allows the common practice of multiple root fields for data configuration.
 
-[^5]: An implementation MUST support all of these MAYs; the MAY refers to the
+[^impl-may]: An implementation MUST support all of these MAYs; the MAY refers to the
 KDL document/data encoding, not the implementation.
 
-[^6]: "Rightmost" is a problematic specification in the face of non-LTR text.
+[^ltr]: "Rightmost" is a problematic specification in the face of non-LTR text.
 This is an [upstream spec issue](https://github.com/kdl-org/kdl/issues/212).
 It's reasonable to assume "rightmost" is intended to mean "later in the input
 text," rather than lexically located to the right.
